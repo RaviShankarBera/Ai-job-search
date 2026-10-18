@@ -82,7 +82,8 @@ ALLOWED_PERMISSIONS = {
     "Bash(python3 tools/verify_pdf.py:*)",
     "Bash(python tools/verify_layout.py:*)",
     "Bash(python3 tools/verify_layout.py:*)",
-    "Bash(pdftotext:*)",
+    # No bare Bash(pdftotext:*): it writes its output to any path it is given,
+    # and tools/verify_pdf.py already wraps it with that path confined.
     # The browser-header retry in 09-web-research.md. fetch_page.py is GET-only
     # with a fixed argv and refuses to write inside the repo, which is why the
     # grant names the script and not `curl`.

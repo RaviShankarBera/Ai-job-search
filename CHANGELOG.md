@@ -493,6 +493,18 @@ per-file diff commands.
   template ships no hooks; only settings.json hooks were checked). Check 5 refuses an agent
   `permissionMode` that removes prompts and agent `hooks` or `mcpServers`.
 
+- **Pre-approved PDF tooling can no longer write to arbitrary paths** (`tools/verify_pdf.py`,
+  `.claude/settings.json`, `tools/security_guards.py`, `tests/test_verify_pdf.py`) -
+  `settings.json` pre-approves `verify_pdf.py` with any arguments, and `--dump-text` wrote the
+  extracted text layer to whatever path it was given, creating missing parent directories and
+  overwriting an existing file: a prompt-free write anywhere on disk, with content taken from a
+  PDF that can carry posting-derived text. The CLI now writes only a `.txt` file under the repo's
+  `cv/` or `cover_letters/` (the place `apply.md` Step 5d documents) and refuses a symlinked
+  target. `Bash(pdftotext:*)` is dropped from the allowlist for the same reason - Poppler writes
+  to any output path and `pdftotext <file> -` prints any PDF on disk into the session - and
+  `verify_pdf.py` already wraps it. The documented manual `pdftotext` fallback in Step 5d still
+  works; it now asks first.
+
 ## [1.7.3] - 2026-10-19
 
 ### Added
