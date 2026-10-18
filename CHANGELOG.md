@@ -521,6 +521,21 @@ per-file diff commands.
   its wording into a skill file. The test derives the set of specs from the tools they call,
   so a new fetching command without the rule fails CI.
 
+- **Portal CLIs no longer pass text a reader never sees into the agent's context**
+  (`.agents/skills/*/cli/src/helpers.ts` `visibleHtml` and `stripInvisible`, each CLI's
+  `tests/hidden-text.test.ts`, `/add-portal`'s portal-skill contract) - every CLI turned
+  HTML into text with a bare tag strip, so the text of comments, `<style>` and `<script>`
+  blocks and `hidden`/`display:none` elements became visible text in `search` and `detail`
+  output, and Unicode tag characters, bidi controls and zero-width characters passed through
+  untouched, raw from the portal's JSON or decoded from numeric entities. A listing could
+  therefore carry an instruction that renders as nothing on the page but reads as text to
+  the model. jobindex's `visibleHtml` already dropped comments, scripts and styles for one
+  of its two page shapes; that helper now covers hidden elements and runs on every HTML
+  path in every CLI, and each CLI strips invisible characters from its result at the one
+  function every output format reads. Text styled away by CSS alone (off-screen, zero font
+  size) still needs a renderer and is not caught; the trust-boundary rule in
+  `09-web-research.md` remains the defence there.
+
 ## [1.7.3] - 2026-10-19
 
 ### Added
