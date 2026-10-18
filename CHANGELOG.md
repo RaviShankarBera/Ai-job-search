@@ -505,6 +505,22 @@ per-file diff commands.
   `verify_pdf.py` already wraps it. The documented manual `pdftotext` fallback in Step 5d still
   works; it now asks first.
 
+- **The trust-boundary rule now rides along into every spec that reads third-party content**
+  (`.claude/commands/{add-portal,expand,gmail-sync,interview,notion-sync,outcome,setup}.md`,
+  `.claude/skills/{job-application-assistant,job-scraper,upskill}/SKILL.md`,
+  `tests/test_untrusted_input_rules.py`) - `/apply` and `/rank` state that postings are
+  untrusted third-party data, never instructions, but ten other specs that fetch or read such
+  content did not. `/scrape` ingested portal CLI output and WebSearch results with no rule.
+  `/gmail-sync` classified inbound email - the one input anyone can send - with none.
+  `/setup` Path A read the verbatim archived posting and email-quoting `outcome.md` notes and
+  wrote calibration into `04-job-evaluation.md`, which every later `/apply` and `/rank` loads,
+  so one hostile posting could outlive the run that fetched it. Each spec now points at the
+  Trust boundary section of `09-web-research.md` (one rule, not ten copies); `/gmail-sync`
+  gains Important Rule 10 (no link fetched, no attachment opened, no reply, draft, label or
+  forward), and `/setup` Step A3 takes only the listed facts from the archive and never copies
+  its wording into a skill file. The test derives the set of specs from the tools they call,
+  so a new fetching command without the rule fails CI.
+
 ## [1.7.3] - 2026-10-19
 
 ### Added
