@@ -536,6 +536,19 @@ per-file diff commands.
   size) still needs a renderer and is not caught; the trust-boundary rule in
   `09-web-research.md` remains the defence there.
 
+- **`posting_guard.py` decodes text spelled in invisible characters** (`tools/posting_guard.py`,
+  `tests/test_posting_guard.py`, `/apply` Step 1 item 0) - #702 removes and counts Unicode tag
+  characters (U+E0000-E007F, which shadow ASCII one for one), but what they spelled was thrown
+  away, so an instruction written in them raised only a character count, never a quoted line;
+  and runs of variation selectors (one byte each) passed into the cleaned text untouched. An
+  instruction spelled either way renders as nothing on the page and in the terminal, yet reads
+  as text to the model. What a tag run or a selector run spells is now decoded into a new
+  `invisible_text` finding, scanned like hidden content (so `instruction_like` and
+  `hidden_urls` see it), and raises the verdict's ⚠ (`N strings spelled in invisible
+  characters`) next to #702's tag count. Variation selectors are removed and counted under
+  `invisible_chars.variation`; a lone one, such as the VS16 in ❤️, is counted as encoding noise
+  and never decoded. The three UK subdivision flag emoji are kept and not counted, as before.
+
 ## [1.7.3] - 2026-10-19
 
 ### Added
