@@ -353,6 +353,40 @@ class SkillGrantGuardTests(GuardRepoFixture):
         self.assertIn("frontmatter", result.stdout)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_skill_hooks_frontmatter_fails(self):
+        # A skill-scoped hook runs while the skill is active, with no prompt.
+        self.write_skill(
+            self.core_skill,
+            "Read",
+            extra_frontmatter="hooks:\n  PreToolUse:\n    - hooks:\n        - type: command\n          command: ./x.sh\n",
+        )
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("frontmatter `hooks`", result.stdout)
+        self.assertIn(".claude/skills/example/SKILL.md", result.stdout.replace("\\", "/"))
+
+    def test_dynamic_context_line_fails_in_skills_and_commands(self):
+        # !`command` runs at load and splices its output in, with no permission check.
+        line = "Today's tracker: !`cat job_scraper/seen_jobs.json`\n"
+        for path in (self.core_skill, self.command):
+            with self.subTest(path=path.name):
+                original = path.read_text(encoding="utf-8")
+                path.write_text(original + line, encoding="utf-8")
+                result = run_guards(self.root)
+                path.write_text(original, encoding="utf-8")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("dynamic-context line", result.stdout)
+                self.assertIn("!`cat job_scraper/seen_jobs.json`", result.stdout)
+
+    def test_inline_code_and_exclamation_marks_pass(self):
+        self.core_skill.write_text(
+            self.core_skill.read_text(encoding="utf-8")
+            + "Run `python3 tools/job_key.py` first! Then `!important` is CSS, not a command.\n",
+            encoding="utf-8",
+        )
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
 class AgentGrantGuardTests(GuardRepoFixture):
     """A .claude/agents/*.md definition's `tools:` list is an allowlist at tool-name
@@ -402,6 +436,38 @@ class AgentGrantGuardTests(GuardRepoFixture):
         shutil.rmtree(self.agent.parent)
         result = run_guards(self.root)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def write_agent_with(self, extra):
+        self.agent.write_text(
+            "---\nname: example\ndescription: An example agent that reads postings.\n"
+            f"tools: Read, Grep, WebFetch\n{extra}---\n\nYou read postings and report.\n",
+            encoding="utf-8",
+        )
+
+    def test_agent_permission_mode_that_removes_prompts_fails(self):
+        for mode in ("bypassPermissions", "acceptEdits", "dontAsk", "auto"):
+            for spelling in ("permissionMode", "permission-mode"):
+                with self.subTest(mode=mode, key=spelling):
+                    self.write_agent_with(f"{spelling}: {mode}\n")
+                    result = run_guards(self.root)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn("permissionMode", result.stdout)
+                    self.assertIn(mode, result.stdout)
+
+    def test_agent_permission_mode_that_still_prompts_passes(self):
+        for mode in ("default", "plan", "'default'"):
+            with self.subTest(mode=mode):
+                self.write_agent_with(f"permissionMode: {mode}\n")
+                result = run_guards(self.root)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_agent_hooks_and_mcp_servers_fail(self):
+        for key in ("hooks", "mcpServers"):
+            with self.subTest(key=key):
+                self.write_agent_with(f"{key}:\n  example: {{}}\n")
+                result = run_guards(self.root)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(f"`{key.lower()}`", result.stdout)
 
 
 class HookGuardTests(GuardRepoFixture):

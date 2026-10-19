@@ -480,6 +480,19 @@ per-file diff commands.
   automated updates would freeze both legs. The test reads the workflow text with the stdlib, so
   it needs neither zizmor nor PyYAML.
 
+- **The ask list now covers the files the allow list runs, and the guard reads load-time commands**
+  (`.claude/settings.json`, `tools/security_guards.py` checks 4 and 5, `SECURITY.md`,
+  `tests/test_security_guards.py`) - `allow` pre-approves `tools/*.py`, every portal CLI and
+  `salary_lookup.py` by path, and the skills keep `Edit`/`Write` granted, so in the turn that
+  reads a posting an agent could rewrite one of those files and run it under its existing allow
+  rule: the "cannot silently turn that into a wider grant" guarantee covered the files that
+  define permissions but not the ones the permissions name. `Edit(tools/**)`, `Edit(.agents/**)`
+  and `Edit(salary_lookup.py)` join the required ask rules; CV, cover-letter and tracker writes
+  are unaffected. Check 4 now also refuses frontmatter `hooks` and !`command` dynamic-context
+  lines in skills and commands, which run at load with no prompt (SECURITY.md already said the
+  template ships no hooks; only settings.json hooks were checked). Check 5 refuses an agent
+  `permissionMode` that removes prompts and agent `hooks` or `mcpServers`.
+
 ## [1.7.3] - 2026-10-19
 
 ### Added

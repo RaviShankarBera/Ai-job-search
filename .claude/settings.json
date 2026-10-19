@@ -36,6 +36,9 @@
       "Edit(.claude/agents/**)",
       "Edit(.github/**)",
       "Edit(tools/security_guards.py)",
+      "Edit(tools/**)",
+      "Edit(.agents/**)",
+      "Edit(salary_lookup.py)",
       "Bash(git push:*)"
     ],
     "deny": [

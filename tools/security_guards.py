@@ -29,14 +29,19 @@ Checks:
    instead grant exactly its own CLI). Claude Code pre-approves these for the
    turn that invokes the skill, with no prompt, regardless of workspace trust,
    so the frontmatter is a second permission allowlist. Catches bare Bash and
-   glob grants. The settings.json `ask` and `deny` lists are also required to
-   keep every rule in REQUIRED_ASK_RULES / REQUIRED_DENY_RULES.
+   glob grants. The same files may carry no frontmatter `hooks` and no
+   !`command` dynamic-context line: both run a command when the skill or
+   command loads, before any prompt. The settings.json `ask` and `deny` lists
+   are also required to keep every rule in REQUIRED_ASK_RULES /
+   REQUIRED_DENY_RULES.
 5. Agent definitions — every .claude/agents/*.md must declare `tools:` (a
    missing key means every tool) and each entry must be in
    ALLOWED_AGENT_TOOLS, which has no Edit, Write, NotebookEdit or Agent: the
    shipped agents read untrusted postings. `tools:` is tool-name granularity
    (a `Bash(pattern)` entry resolves to plain Bash), so a patterned entry is
-   rejected as misleading; settings.json's allow list is what scopes Bash.
+   rejected as misleading; settings.json's allow list is what scopes Bash. A
+   `permissionMode` must be one that still prompts (ALLOWED_AGENT_PERMISSION_MODES),
+   and `hooks` and `mcpServers` are refused.
 
 Stdlib only. Exit 0 on success, 1 with a failure list otherwise.
 """
@@ -106,6 +111,12 @@ REQUIRED_ASK_RULES = [
     "Edit(.claude/agents/**)",
     "Edit(.github/**)",
     "Edit(tools/security_guards.py)",
+    # The files `allow` pre-approves to run, by path: editing one silently
+    # turns its allow rule into "run whatever is written here", which is the
+    # same widening. Every portal CLI lives under .agents/.
+    "Edit(tools/**)",
+    "Edit(.agents/**)",
+    "Edit(salary_lookup.py)",
     "Bash(git push:*)",
 ]
 
@@ -255,6 +266,20 @@ ALLOWED_SKILL_TOOLS = {
 # `Bash(echo *)` entry gives the agent plain Bash.
 ALLOWED_AGENT_TOOLS = {"Read", "Glob", "Grep", "WebFetch", "WebSearch", "Bash"}
 
+# An agent's permissionMode applies to everything it does, so only modes that
+# still prompt: acceptEdits, auto, dontAsk and bypassPermissions each remove
+# the prompts this file's allowlists assume.
+ALLOWED_AGENT_PERMISSION_MODES = {"default", "manual", "plan"}
+
+# A skill or command line of the form !`command` runs the command when the
+# skill loads and splices its output into the prompt, with no permission check.
+DYNAMIC_CONTEXT = re.compile(r"!`[^`\n]+`")
+
+
+def _key(name: str) -> str:
+    """Frontmatter key spelling-insensitive: permissionMode, permission-mode, ..."""
+    return name.lower().replace("-", "").replace("_", "")
+
 _FRONTMATTER_KEY = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
 
 
@@ -343,10 +368,24 @@ def check_skill_tool_grants() -> None:
     for path in skills + commands:
         rel = path.relative_to(ROOT).as_posix()
         try:
-            data = _frontmatter(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             errors.append(f"{rel}: unreadable (must be UTF-8): {exc}")
             continue
+        for match in DYNAMIC_CONTEXT.finditer(text):
+            errors.append(
+                f"{rel}: dynamic-context line {match.group(0)!r}. Claude Code runs a !`command` "
+                "when the skill or command loads and splices its output into the prompt, with no "
+                "permission check, so this is a pre-approved shell command. Move it into a step "
+                "the model runs, where settings.json decides."
+            )
+        data = _frontmatter(text)
+        if data is not None and "hooks" in {_key(k) for k in data}:
+            errors.append(
+                f"{rel}: frontmatter `hooks`. A skill or command hook runs its command with no "
+                "prompt whenever its event fires while the skill is active; the template ships no "
+                "hooks (SECURITY.md), and settings.json hooks are held to ALLOWED_HOOKS."
+            )
         if data is None:
             if path in commands:
                 continue  # commands may omit frontmatter entirely
@@ -573,6 +612,20 @@ def check_agent_tool_grants() -> None:
         if data is None:
             errors.append(f"{rel}: missing or unterminated frontmatter (expected --- ... ---)")
             continue
+        keyed = {_key(k): v for k, v in data.items()}
+        mode = keyed.get("permissionmode")
+        if mode is not None and str(mode).strip().strip("'\"") not in ALLOWED_AGENT_PERMISSION_MODES:
+            errors.append(
+                f"{rel}: permissionMode {mode!r}. An agent's mode applies to every call it makes, "
+                "and this one removes prompts the allowlists here assume; use one of "
+                f"{sorted(ALLOWED_AGENT_PERMISSION_MODES)} or omit the key."
+            )
+        for key, why in (
+            ("hooks", "runs its command with no prompt whenever its event fires inside the agent"),
+            ("mcpservers", "connects a server whose tools no allowlist here has reviewed"),
+        ):
+            if key in keyed:
+                errors.append(f"{rel}: frontmatter `{key}`: an agent-scoped entry {why}.")
         if "tools" not in data or not _tool_entries(data.get("tools")):
             errors.append(
                 f"{rel}: no `tools:` key - an agent without one gets every tool, including "
@@ -613,7 +666,8 @@ def main() -> int:
         return 1
     print(
         "security_guards: OK (permissions allowlist, hooks allowlist, gitignore rules, "
-        "package manifests, no tracked node_modules, skill/command allowed-tools, agent tools)"
+        "package manifests, no tracked node_modules, skill/command allowed-tools, "
+        "load-time commands, agent tools and modes)"
     )
     return 0
 
