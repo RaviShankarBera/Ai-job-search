@@ -27,8 +27,8 @@ Checks:
    a subdirectory, which outranks the root file, is checked for negations.
 3. .agents/**/package.json — no npm/bun lifecycle scripts (preinstall,
    install, postinstall, prepare, prepack), no trustedDependencies, no
-   workspaces, and no bunfig.toml beside the manifest. Catches code
-   execution smuggled into `bun install`.
+   workspaces, and no bunfig.toml or .npmrc beside the manifest. Catches
+   code execution smuggled into `bun install`, and a registry swap.
 4. Skill and command frontmatter — every `allowed-tools` entry in
    .claude/skills/*/SKILL.md, .agents/skills/*/SKILL.md and
    .claude/commands/*.md must be in ALLOWED_SKILL_TOOLS (a portal skill may
@@ -254,10 +254,13 @@ FORBIDDEN_SCRIPTS = {"preinstall", "install", "postinstall", "prepare", "prepack
 # Manifest keys that pull code into `bun install` by another door: `workspaces`
 # installs sub-packages with their own lifecycle scripts (a workspace
 # postinstall ran under Bun 1.3.10, scripts the top-level check never saw), and
-# `trustedDependencies` re-enables dependency scripts. A bunfig.toml beside the
-# manifest reconfigures the install itself (registry, scopes, cache) and is
-# refused for the same reason. tools/install_portal_clis.py skips all of these.
+# `trustedDependencies` re-enables dependency scripts. A bunfig.toml or .npmrc
+# beside the manifest reconfigures the install itself (registry, scopes,
+# cache), so every dependency can come from a server the portal's author
+# picked; both are refused for the same reason. tools/install_portal_clis.py
+# skips all of these.
 FORBIDDEN_MANIFEST_KEYS = {"trustedDependencies", "workspaces"}
+INSTALL_CONFIG_FILES = ("bunfig.toml", ".npmrc")
 
 # The exact `allowed-tools` entries a skill or command frontmatter may carry.
 # Claude Code pre-approves these for the turn that invokes the skill, with no
@@ -666,13 +669,14 @@ def check_package_manifests() -> None:
                 f"{relpath}: workspaces is forbidden - each workspace package brings its own "
                 "lifecycle scripts, which this check never reads, into `bun install`."
             )
-        bunfig = manifest.parent / "bunfig.toml"
-        if bunfig.exists():
-            errors.append(
-                f"{bunfig.relative_to(ROOT)}: a bunfig.toml beside a portal manifest is forbidden - "
-                "it reconfigures `bun install` itself (registry, scopes, trusted packages) for "
-                "every fork user."
-            )
+        for name in INSTALL_CONFIG_FILES:
+            config = manifest.parent / name
+            if config.exists():
+                errors.append(
+                    f"{config.relative_to(ROOT)}: a {name} beside a portal manifest is forbidden - "
+                    "it reconfigures `bun install` itself (registry, scopes, trusted packages) for "
+                    "every fork user."
+                )
 
 
 def check_tracked_node_modules() -> None:

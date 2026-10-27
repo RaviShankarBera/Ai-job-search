@@ -874,6 +874,30 @@ class ManifestGuardTests(GuardRepoFixture):
         self.assertEqual(result.returncode, 1)
         self.assertIn("trustedDependencies", result.stdout)
 
+    # GHSA-wq7j-x5jq-pjrw: the other doors into `bun install`. Workspace
+    # packages carry scripts this check never reads; a config file beside the
+    # manifest (bunfig.toml, .npmrc) can point every dependency at another
+    # registry. The installer refuses the same things.
+    def test_workspaces_fails(self):
+        self.write_manifest({"name": "example-cli", "workspaces": ["packages/*"]})
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("workspaces", result.stdout)
+
+    def test_install_config_file_beside_manifest_fails(self):
+        for name, body in (("bunfig.toml", '[install]\nregistry = "https://registry.example/"\n'),
+                           (".npmrc", "registry=https://registry.example/\n")):
+            with self.subTest(file=name):
+                config = self.manifest.parent / name
+                config.write_text(body, encoding="utf-8")
+                try:
+                    result = run_guards(self.root)
+                finally:
+                    config.unlink()
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(name, result.stdout)
+                self.assertIn("example-search/cli/" + name, result.stdout.replace("\\", "/"))
+
     def test_malformed_manifest_shape_fails_cleanly(self):
         for data, message in [
             ([], "top-level JSON value must be an object"),

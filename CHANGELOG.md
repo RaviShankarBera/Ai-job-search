@@ -520,17 +520,18 @@ per-file diff commands.
   key is added to the allowlist in the same PR, with its own check. Reported privately by
   @folovco and @Huge (Martin Vlach).
 
-- **Portal CLI installation never runs a lifecycle script, and refuses `workspaces` and
-  `bunfig.toml`** (#718 by @rudycelekli, `tools/install_portal_clis.py`, `tools/security_guards.py`
+- **Portal CLI installation never runs a lifecycle script, and refuses `workspaces`,
+  `bunfig.toml` and `.npmrc`** (#718 by @rudycelekli, `tools/install_portal_clis.py`, `tools/security_guards.py`
   check 3, `tests/test_install_portal_hooks.py`, `tests/test_install_portal_clis.py`) - the
   installer refused a manifest's own lifecycle scripts and `trustedDependencies`, then ran plain
   `bun install`, which on Bun 1.3.x still runs the hooks of default-trusted dependencies (esbuild's
   `postinstall` ran in the reproduction) and of workspace packages: a `workspaces` entry pulled in
-  sub-packages whose scripts the check never read, and a `bunfig.toml` beside the manifest
-  reconfigured the install itself (registry, scopes, trusted packages). Every install now passes
+  sub-packages whose scripts the check never read, and a `bunfig.toml` or `.npmrc` beside the
+  manifest reconfigured the install itself (registry, scopes, trusted packages), so every
+  dependency could come from a server the portal's author picked. Every install now passes
   `--ignore-scripts` (verified against an offline registry serving a hooked package), the
-  installer skips a manifest that declares `workspaces` or has a `bunfig.toml` beside it, and the
-  in-tree guard forbids both. Reported privately by @folovco and @Huge (Martin Vlach).
+  installer skips a manifest that declares `workspaces` or has a `bunfig.toml` or `.npmrc` beside
+  it, and the in-tree guard forbids all three. The `.npmrc` case is ours, not the report's. Reported privately by @folovco and @Huge (Martin Vlach).
 
 
 - **The ask list now covers the files the allow list runs, and the guard reads load-time commands**

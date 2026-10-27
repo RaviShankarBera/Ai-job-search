@@ -72,10 +72,12 @@ class DependencyHooks(unittest.TestCase):
                 (cli / "package.json").write_text(json.dumps({
                     "name": "example-search", "private": True, "dependencies": {"esbuild": "0.25.0"},
                 }), encoding="utf-8")
-                (cli / ".npmrc").write_text(f"registry=http://127.0.0.1:{server.server_port}/\n", encoding="utf-8")
+                # The registry goes in through the environment: a .npmrc beside
+                # the manifest is one of the things the installer now refuses.
                 env = {"PATH": str(Path(BUN).absolute().parent) + os.pathsep + os.defpath,
                        "HOME": str(root), "TMPDIR": str(root), "TEMP": str(root), "TMP": str(root),
-                       "BUN_INSTALL_CACHE_DIR": str(root / "cache")}
+                       "BUN_INSTALL_CACHE_DIR": str(root / "cache"),
+                       "NPM_CONFIG_REGISTRY": f"http://127.0.0.1:{server.server_port}/"}
                 if "SYSTEMROOT" in os.environ:
                     env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
                 proc = subprocess.run([sys.executable, str(tools / "install_portal_clis.py")],

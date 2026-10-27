@@ -83,6 +83,13 @@ class InstallPortalClis(unittest.TestCase):
         (cli / "bunfig.toml").write_text('[install]\nregistry = "https://registry.example"\n', encoding="utf-8")
         self.assertIn("bunfig.toml", unsafe_reason(cli))
 
+    def test_npmrc_is_unsafe(self):
+        # Bun reads .npmrc too: a registry line beside the manifest fetches
+        # every dependency from a server the portal's author picked.
+        cli = self.add_cli("x")
+        (cli / ".npmrc").write_text("registry=https://registry.example/\n", encoding="utf-8")
+        self.assertIn(".npmrc", unsafe_reason(cli))
+
     def test_bun_install_never_runs_lifecycle_scripts(self):
         # #718: --ignore-scripts on every install, so a dependency's hook stays
         # off whatever the Bun release's default trust list says.

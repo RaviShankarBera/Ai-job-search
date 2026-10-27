@@ -14,7 +14,7 @@ README previously carried a PowerShell and a Bash loop, each with its own
 hand-copied list of portal names.
 
 A manifest that declares an npm/bun lifecycle script, trustedDependencies or
-workspaces, or that has a bunfig.toml beside it, is skipped and reported
+workspaces, or that has a bunfig.toml or .npmrc beside it, is skipped and reported
 instead of installed: those are the doors that run code or reconfigure the
 install during `bun install`, and tools/security_guards.py forbids them
 in-tree. A borrowed portal that carries one gets read by a human before it
@@ -38,7 +38,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from security_guards import FORBIDDEN_SCRIPTS  # noqa: E402
+from security_guards import FORBIDDEN_SCRIPTS, INSTALL_CONFIG_FILES  # noqa: E402
 
 
 def discover(root: Path = ROOT) -> list[Path]:
@@ -64,9 +64,10 @@ def unsafe_reason(cli_dir: Path) -> str | None:
         # Workspace packages carry their own lifecycle scripts, which the check
         # above never reads; a workspace postinstall ran under Bun 1.3.10.
         return "declares workspaces"
-    if (cli_dir / "bunfig.toml").exists():
-        # Reconfigures the install itself: registry, scopes, trusted packages.
-        return "carries a bunfig.toml"
+    for name in INSTALL_CONFIG_FILES:
+        if (cli_dir / name).exists():
+            # Reconfigures the install itself: registry, scopes, trusted packages.
+            return f"carries a {name}"
     return None
 
 
