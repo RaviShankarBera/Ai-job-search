@@ -364,7 +364,10 @@ class DumpTargetTests(unittest.TestCase):
 
     def test_symlink_out_of_cv_is_refused(self):
         link = self.root / "cv" / "main_acme.txt"
-        link.symlink_to(self.root / "outside.txt")
+        try:
+            link.symlink_to(self.root / "outside.txt")
+        except OSError as exc:  # Windows without Developer Mode or admin rights (WinError 1314)
+            self.skipTest(f"cannot create symlinks here: {exc}")
         self.assertEqual(check_dump_target(link, self.root), "must not be a symlink")
 
     @patch("tools.verify_pdf.verify_pdf")
