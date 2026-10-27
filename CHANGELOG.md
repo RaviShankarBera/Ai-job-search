@@ -479,6 +479,25 @@ per-file diff commands.
   the `texlive/texlive:latest` leg exists to track current TeX Live, and a digest pin without
   automated updates would freeze both legs. The test reads the workflow text with the stdlib, so
   it needs neither zizmor nor PyYAML.
+- **`robots_check.py` matches wildcard rules in linear time** (`tools/robots_check.py` `_match`,
+  `tests/test_robots_check.py`) - every `*` in a robots.txt rule became a regex `.*`, so a rule with
+  repeated wildcard segments that does not match the path (`Disallow: /*a*a*a...*b$`) sent Python's
+  backtracking engine into exponential time: 16 segments took minutes of CPU, on a file the site
+  being checked controls, in the main process where no curl timeout applies. The matcher is now a
+  table walk in `O(len(pattern) * len(path))` with no regex and no backtracking; consecutive `*`
+  match as one, and three tests pin the old matcher's answers for prefix, anchored and
+  slash-spanning rules. Reported privately by @Huge (Martin Vlach), whose linear matcher this is.
+
+- **`robots_check.py` only ever hands http(s) URLs to curl** (`tools/robots_check.py` `gate`,
+  `_fetch`, `tests/test_robots_check.py`) - `gate()` rebuilt the target as
+  `scheme://host/robots.txt` without checking the scheme, so a direct call with `file:`, `gopher:`
+  or `ftp:` passed that scheme to `curl -L`, which was also free to follow a redirect to any
+  protocol it was built with. Reach was small (the response is never printed, and the main fetch
+  path in `fetch_page.py` already allowed only http(s) per hop), but the tool is pre-approved.
+  `gate()` now fails closed with `UNCONFIRMED` on any scheme but http(s) and on a URL without a
+  host, before curl runs, and curl itself gets `--proto =http,https --proto-redir =http,https`.
+  Reported privately by @Huge (Martin Vlach).
+
 
 - **The ask list now covers the files the allow list runs, and the guard reads load-time commands**
   (`.claude/settings.json`, `tools/security_guards.py` checks 4 and 5, `SECURITY.md`,
