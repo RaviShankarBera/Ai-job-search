@@ -300,7 +300,11 @@ def clean_html(markup: str):
         hidden_buf.clear()
         hidden_at = None
         if block:
-            hidden_blocks.append(block[:EXCERPT])
+            # The excerpt is reported verbatim to the agent, so it carries no
+            # invisible characters; the raw block goes to hidden_text, where
+            # guard() counts and decodes them. Clean before cutting, or a run of
+            # invisible characters at the front would leave an empty excerpt.
+            hidden_blocks.append(clean_text(block)[0][:EXCERPT])
             hidden_parts.append(block)
 
     def pop_to(index):
@@ -439,8 +443,13 @@ def guard(raw: str, mode: str):
         text, hidden_text, hidden_blocks = raw, "", []
     text, tf = clean_text(text)
     hidden_text, hidden_tf = clean_text(hidden_text)
-    # What invisible characters spell is hidden content: scanned and reported,
-    # never part of the cleaned text.
+    # Invisible characters inside hidden content count and alarm like visible
+    # ones: a tag-spelled instruction in a display:none block is the same
+    # payload, only better hidden. What they spell is hidden content: scanned
+    # and reported, never part of the cleaned text.
+    for key, n in hidden_tf["invisible_chars"].items():
+        tf["invisible_chars"][key] = tf["invisible_chars"].get(key, 0) + n
+    tf["invisible_flagged"] += hidden_tf["invisible_flagged"]
     tf["invisible_text"] += hidden_tf["invisible_text"]
     hidden_text = "\n".join([hidden_text, *tf["invisible_text"]])
     findings = {"hidden_blocks": hidden_blocks, **tf, **scan(text, hidden_text)}

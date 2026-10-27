@@ -549,6 +549,16 @@ per-file diff commands.
   `invisible_chars.variation`; a lone one, such as the VS16 in ❤️, is counted as encoding noise
   and never decoded. The three UK subdivision flag emoji are kept and not counted, as before.
 
+- **`posting_guard.py` counts invisible characters inside hidden HTML and cleans the hidden-block
+  excerpts** (`tools/posting_guard.py`, `tests/test_posting_guard.py`) - #702 removed, counted
+  and flagged Unicode tag characters in the visible text, but the hidden text's counts were
+  thrown away and the `hidden_blocks` excerpts came back raw: a tag-spelled instruction inside a
+  `display:none` block got the `clean` verdict with `invisible_chars` empty, and its 28
+  characters travelled on in the findings block that posting-fetcher forwards to the main agent.
+  Invisible characters inside hidden content now count, alarm and decode like visible ones, and
+  each excerpt is cleaned before it is cut to length, so a run of invisible characters at the
+  front of a block no longer leaves an empty excerpt. Reported privately by @balhyo-younjisang.
+
 ## [1.7.3] - 2026-10-19
 
 ### Added
