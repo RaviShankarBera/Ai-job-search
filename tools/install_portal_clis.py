@@ -13,10 +13,12 @@ One command for every shell, since Python is already a prerequisite - the
 README previously carried a PowerShell and a Bash loop, each with its own
 hand-copied list of portal names.
 
-A manifest that declares an npm/bun lifecycle script or trustedDependencies is
-skipped and reported instead of installed: those are the hooks that run code
-during `bun install`, and tools/security_guards.py forbids them in-tree. A
-borrowed portal that carries one gets read by a human before it runs.
+A manifest that declares an npm/bun lifecycle script, trustedDependencies or
+workspaces, or that has a bunfig.toml beside it, is skipped and reported
+instead of installed: those are the doors that run code or reconfigure the
+install during `bun install`, and tools/security_guards.py forbids them
+in-tree. A borrowed portal that carries one gets read by a human before it
+runs.
 
 Every install also passes --ignore-scripts, including on older Bun releases
 that run a built-in list of dependency hooks without trustedDependencies.
@@ -58,6 +60,13 @@ def unsafe_reason(cli_dir: Path) -> str | None:
         return f"declares lifecycle script(s) {bad}"
     if "trustedDependencies" in data:
         return "declares trustedDependencies"
+    if "workspaces" in data:
+        # Workspace packages carry their own lifecycle scripts, which the check
+        # above never reads; a workspace postinstall ran under Bun 1.3.10.
+        return "declares workspaces"
+    if (cli_dir / "bunfig.toml").exists():
+        # Reconfigures the install itself: registry, scopes, trusted packages.
+        return "carries a bunfig.toml"
     return None
 
 

@@ -724,6 +724,133 @@ class GitignoreNegationTests(GuardRepoFixture):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
+class GitignoreWhitespaceTests(GuardRepoFixture):
+    """GHSA-rv99-7xf2-8f4p: git keeps leading whitespace in a pattern and drops
+    only unescaped trailing whitespace. The guard stripped both ends, so a
+    required rule prefixed with a space passed the guard while git had stopped
+    ignoring the file."""
+
+    def test_rule_with_leading_whitespace_fails(self):
+        rules = list(security_guards.REQUIRED_IGNORE_RULES)
+        rules[rules.index("salary_data.json")] = " salary_data.json"
+        self.write_gitignore(rules)
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("required personal-data rule missing: 'salary_data.json'", result.stdout)
+
+    def test_rule_with_a_leading_tab_fails(self):
+        rules = list(security_guards.REQUIRED_IGNORE_RULES)
+        rules[rules.index("job_search_tracker.csv")] = "\tjob_search_tracker.csv"
+        self.write_gitignore(rules)
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("required personal-data rule missing: 'job_search_tracker.csv'", result.stdout)
+
+    def test_trailing_whitespace_is_ignored_like_git_ignores_it(self):
+        rules = list(security_guards.REQUIRED_IGNORE_RULES)
+        rules[rules.index("salary_data.json")] = "salary_data.json  "
+        self.write_gitignore(rules)
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_negation_with_leading_whitespace_is_still_a_negation(self):
+        # " !salary_data.json" is no negation for git either (it names a file
+        # beginning with a space), so it must not pass as an ordinary rule.
+        self.write_gitignore(list(security_guards.REQUIRED_IGNORE_RULES) + ["!salary_data.json "])
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("negation rule not in the reviewed allowlist", result.stdout)
+
+
+class SubdirectoryGitignoreTests(GuardRepoFixture):
+    """GHSA-rv99-7xf2-8f4p: a .gitignore in a subdirectory takes precedence
+    over the root file, so a negation there re-includes personal data the
+    guard, which read only the root file, never saw."""
+
+    def test_subdirectory_gitignore_negation_fails(self):
+        sub = self.root / "documents" / "cv"
+        sub.mkdir(parents=True)
+        (sub / ".gitignore").write_text("!personal_cv.pdf\n", encoding="utf-8")
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("negation rule not in the reviewed allowlist", result.stdout)
+        self.assertIn("!personal_cv.pdf", result.stdout)
+        self.assertIn("documents/cv/.gitignore", result.stdout.replace("\\", "/"))
+
+    def test_subdirectory_gitignore_without_negation_passes(self):
+        sub = self.root / "documents"
+        sub.mkdir(parents=True)
+        (sub / ".gitignore").write_text("*.tmp\n# a comment\n\n", encoding="utf-8")
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_root_allowlist_does_not_cover_a_subdirectory_negation(self):
+        # The allowlist is written for the root file; the same text in a
+        # subdirectory file is a different rule (relative to that directory).
+        sub = self.root / "documents"
+        sub.mkdir(parents=True)
+        (sub / ".gitignore").write_text("!cv/main_example.tex\n", encoding="utf-8")
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("documents/.gitignore", result.stdout.replace("\\", "/"))
+
+    def test_gitignore_inside_node_modules_or_git_is_not_read(self):
+        for parts in (("node_modules", "pkg"), (".git", "info")):
+            sub = self.root.joinpath(*parts)
+            sub.mkdir(parents=True, exist_ok=True)
+            (sub / ".gitignore").write_text("!anything\n", encoding="utf-8")
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+class SettingsKeyAllowlistTests(GuardRepoFixture):
+    """GHSA-cqcv-crx7-x7q7: the guard checked allow, ask, deny and hooks and
+    nothing else, so a settings.json could add keys that run commands or turn
+    prompts off (env, apiKeyHelper, statusLine, permissions.defaultMode) and
+    still pass."""
+
+    def _settings_with(self, top=None, permissions=None):
+        data = json.loads(self.settings.read_text())
+        data.update(top or {})
+        data["permissions"].update(permissions or {})
+        self.settings.write_text(json.dumps(data))
+
+    def test_unrecognised_top_level_setting_fails(self):
+        for key, value in (
+            ("env", {"PYTHONPATH": "/tmp/evil"}),
+            ("apiKeyHelper", "/tmp/evil.sh"),
+            ("statusLine", {"type": "command", "command": "/tmp/evil.sh"}),
+            ("enableAllProjectMcpServers", True),
+        ):
+            with self.subTest(key=key):
+                self.write_settings(sorted(security_guards.ALLOWED_PERMISSIONS))
+                self._settings_with(top={key: value})
+                result = run_guards(self.root)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn("top-level setting not in the reviewed allowlist", result.stdout)
+                self.assertIn(key, result.stdout)
+
+    def test_unrecognised_permissions_setting_fails(self):
+        for key, value in (
+            ("defaultMode", "bypassPermissions"),
+            ("additionalDirectories", ["~"]),
+        ):
+            with self.subTest(key=key):
+                self.write_settings(sorted(security_guards.ALLOWED_PERMISSIONS))
+                self._settings_with(permissions={key: value})
+                result = run_guards(self.root)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn("permissions setting not in the reviewed allowlist", result.stdout)
+                self.assertIn(key, result.stdout)
+
+    def test_shipped_keys_pass(self):
+        # permissions with allow/ask/deny, and an empty hooks object, is the
+        # whole reviewed shape.
+        self._settings_with(top={"hooks": {}})
+        result = run_guards(self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 class ManifestGuardTests(GuardRepoFixture):
     def test_each_lifecycle_script_fails(self):
         for script in sorted(security_guards.FORBIDDEN_SCRIPTS):

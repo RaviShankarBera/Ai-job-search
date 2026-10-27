@@ -497,6 +497,40 @@ per-file diff commands.
   `gate()` now fails closed with `UNCONFIRMED` on any scheme but http(s) and on a URL without a
   host, before curl runs, and curl itself gets `--proto =http,https --proto-redir =http,https`.
   Reported privately by @Huge (Martin Vlach).
+- **`security_guards.py` reads `.gitignore` the way git does and checks every `.gitignore` in the
+  tree** (`tools/security_guards.py` check 2, `tests/test_security_guards.py`) - the guard stripped
+  both ends of each line, but git drops only unescaped trailing whitespace: ` salary_data.json`
+  satisfied the required-rule check while git had stopped ignoring the file (the pattern now named
+  a file beginning with a space). And only the root file was read, though a `.gitignore` in a
+  subdirectory outranks it, so `documents/cv/.gitignore` holding `!personal_cv.pdf` re-included
+  personal data with CI green. Leading whitespace is now part of the pattern, and every
+  `.gitignore` below the root (outside `.git` and `node_modules`) is checked for negations; an
+  intentional one is allowlisted as `<dir>/.gitignore:!pattern`. Both need a change to a tracked
+  `.gitignore` that a reviewer would see, which is why the guard exists. Reported privately by
+  @Huge (Martin Vlach).
+
+- **`security_guards.py` allows only the `settings.json` keys it checks** (`tools/security_guards.py`
+  check 1, `tests/test_security_guards.py`, `SECURITY.md`) - the guard verified `permissions.allow`,
+  `ask`, `deny` and `hooks` and ignored every other key, so a `settings.json` carrying `env`
+  (which reaches every pre-approved `python tools/*.py` run; none uses `-I`), `apiKeyHelper`, a
+  `statusLine` command, `enableAllProjectMcpServers`, `permissions.defaultMode: bypassPermissions`
+  or `permissions.additionalDirectories` passed CI with the lists intact and the prompts gone.
+  Any top-level key outside `ALLOWED_SETTINGS_KEYS` (`permissions`, `hooks`) and any
+  `permissions` key outside `ALLOWED_PERMISSIONS_KEYS` (`allow`, `ask`, `deny`) now fails; a new
+  key is added to the allowlist in the same PR, with its own check. Reported privately by
+  @folovco and @Huge (Martin Vlach).
+
+- **Portal CLI installation never runs a lifecycle script, and refuses `workspaces` and
+  `bunfig.toml`** (#718 by @rudycelekli, `tools/install_portal_clis.py`, `tools/security_guards.py`
+  check 3, `tests/test_install_portal_hooks.py`, `tests/test_install_portal_clis.py`) - the
+  installer refused a manifest's own lifecycle scripts and `trustedDependencies`, then ran plain
+  `bun install`, which on Bun 1.3.x still runs the hooks of default-trusted dependencies (esbuild's
+  `postinstall` ran in the reproduction) and of workspace packages: a `workspaces` entry pulled in
+  sub-packages whose scripts the check never read, and a `bunfig.toml` beside the manifest
+  reconfigured the install itself (registry, scopes, trusted packages). Every install now passes
+  `--ignore-scripts` (verified against an offline registry serving a hooked package), the
+  installer skips a manifest that declares `workspaces` or has a `bunfig.toml` beside it, and the
+  in-tree guard forbids both. Reported privately by @folovco and @Huge (Martin Vlach).
 
 
 - **The ask list now covers the files the allow list runs, and the guard reads load-time commands**

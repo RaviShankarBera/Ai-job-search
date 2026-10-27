@@ -15,14 +15,20 @@ Checks:
    which would auto-approve commands on every fork. The same file's `hooks`
    key is held to an allowlist too: a hook runs automatically when its event
    fires, with no prompt, so it is strictly more dangerous than a pre-approved
-   permission.
+   permission. No other top-level key, and no `permissions` key beyond allow,
+   ask and deny, may appear: `env`, `apiKeyHelper`, a `statusLine` command or
+   `permissions.defaultMode` would run code or switch prompts off behind the
+   lists this guard reads.
 2. .gitignore — the personal-data ignore rules must all still be present,
    and no un-allowlisted negation (!pattern) may re-include them. Catches
    weakening that would make future users silently commit their tracker,
-   profile exports, or application archives.
+   profile exports, or application archives. Lines are read as git reads
+   them (leading whitespace is part of the pattern), and every .gitignore in
+   a subdirectory, which outranks the root file, is checked for negations.
 3. .agents/**/package.json — no npm/bun lifecycle scripts (preinstall,
-   install, postinstall, prepare, prepack) and no trustedDependencies.
-   Catches code execution smuggled into `bun install`.
+   install, postinstall, prepare, prepack), no trustedDependencies, no
+   workspaces, and no bunfig.toml beside the manifest. Catches code
+   execution smuggled into `bun install`.
 4. Skill and command frontmatter — every `allowed-tools` entry in
    .claude/skills/*/SKILL.md, .agents/skills/*/SKILL.md and
    .claude/commands/*.md must be in ALLOWED_SKILL_TOOLS (a portal skill may
@@ -233,7 +239,25 @@ ALLOWED_IGNORE_NEGATIONS = {
 # https://research.jfrog.com/post/shai-hulud-is-back-august/
 ALLOWED_HOOKS: set[str] = set()
 
+# The only keys .claude/settings.json may carry, at the top level and inside
+# `permissions`. Everything the guard does not read is a way around it: `env`
+# reaches every allowlisted `python tools/*.py` run (PYTHONPATH, none of them
+# runs with -I), `apiKeyHelper` and a `statusLine` command run a program with
+# no prompt, `enableAllProjectMcpServers` auto-approves servers, and
+# `permissions.defaultMode: bypassPermissions` or `additionalDirectories`
+# widen what the allow/ask/deny lists scope. A new key goes here in the same
+# PR, exactly as with ALLOWED_PERMISSIONS, so the widening is reviewable.
+ALLOWED_SETTINGS_KEYS = {"permissions", "hooks"}
+ALLOWED_PERMISSIONS_KEYS = {"allow", "ask", "deny"}
+
 FORBIDDEN_SCRIPTS = {"preinstall", "install", "postinstall", "prepare", "prepack"}
+# Manifest keys that pull code into `bun install` by another door: `workspaces`
+# installs sub-packages with their own lifecycle scripts (a workspace
+# postinstall ran under Bun 1.3.10, scripts the top-level check never saw), and
+# `trustedDependencies` re-enables dependency scripts. A bunfig.toml beside the
+# manifest reconfigures the install itself (registry, scopes, cache) and is
+# refused for the same reason. tools/install_portal_clis.py skips all of these.
+FORBIDDEN_MANIFEST_KEYS = {"trustedDependencies", "workspaces"}
 
 # The exact `allowed-tools` entries a skill or command frontmatter may carry.
 # Claude Code pre-approves these for the turn that invokes the skill, with no
@@ -454,6 +478,18 @@ def check_permissions() -> None:
         errors.append(".claude/settings.json: top-level JSON value must be an object")
         return
 
+    # Checked first: an unknown key is a setting the rest of this guard does
+    # not read, and some of them run commands or switch prompting off.
+    for key in sorted(set(data) - ALLOWED_SETTINGS_KEYS):
+        errors.append(
+            f".claude/settings.json: top-level setting not in the reviewed allowlist: {key!r}. "
+            "Only `permissions` and `hooks` are checked here; any other key (env, apiKeyHelper, "
+            "statusLine, enableAllProjectMcpServers, ...) can run a program or change what every "
+            "pre-approved tool sees, with no prompt, on every fork. If the key is intentional, "
+            "add it to ALLOWED_SETTINGS_KEYS in tools/security_guards.py in the same PR and "
+            "extend the guard to check its value."
+        )
+
     # Checked before the permissions shape guards below, so a file that pairs a
     # malformed permissions block with a hook cannot return early and skip this.
     hooks = data.get("hooks", {})
@@ -477,6 +513,14 @@ def check_permissions() -> None:
     if not isinstance(permissions, dict):
         errors.append(".claude/settings.json: permissions must be an object")
         return
+    for key in sorted(set(permissions) - ALLOWED_PERMISSIONS_KEYS):
+        errors.append(
+            f".claude/settings.json: permissions setting not in the reviewed allowlist: {key!r}. "
+            "`defaultMode: bypassPermissions` turns every prompt off and `additionalDirectories` "
+            "widens what the rules scope, so the allow, ask and deny lists are only as strong as "
+            "the keys beside them. If the key is intentional, add it to ALLOWED_PERMISSIONS_KEYS "
+            "in tools/security_guards.py in the same PR and extend the guard to check its value."
+        )
     allow = permissions.get("allow", [])
     if not isinstance(allow, list) or not all(isinstance(entry, str) for entry in allow):
         errors.append(".claude/settings.json: permissions.allow must be a list of strings")
@@ -514,10 +558,34 @@ def check_permissions() -> None:
                 )
 
 
+def _gitignore_lines(path: Path) -> list[str]:
+    """The patterns in a .gitignore, read the way git reads them.
+
+    git drops only unescaped trailing whitespace; leading whitespace is part of
+    the pattern. The guard used to strip both ends, so ` salary_data.json`
+    satisfied the required-rule check while git had stopped ignoring the file
+    (it now matched only a name beginning with a space).
+    """
+    return [
+        re.sub(r"(?<!\\)\s+$", "", line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def _other_gitignores():
+    """Every .gitignore below the root, skipping .git and installed dependencies."""
+    import os
+
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = sorted(d for d in dirnames if d not in (".git", "node_modules"))
+        if ".gitignore" in filenames and Path(dirpath) != ROOT:
+            yield Path(dirpath) / ".gitignore"
+
+
 def check_gitignore() -> None:
     path = ROOT / ".gitignore"
     try:
-        lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+        lines = _gitignore_lines(path)
     except OSError as exc:
         errors.append(f".gitignore: unreadable: {exc}")
         return
@@ -539,6 +607,27 @@ def check_gitignore() -> None:
                 "taking effect). If this negation is intentional, add it to "
                 "ALLOWED_IGNORE_NEGATIONS in tools/security_guards.py in the same PR."
             )
+    # A .gitignore in a subdirectory outranks the root file for paths under it,
+    # so a negation there re-includes personal data the root rules excluded.
+    # The allowlist above is written for the root file (a pattern is relative
+    # to its own file), so an intentional negation in a subdirectory is listed
+    # as "<dir>/.gitignore:!pattern". None is shipped.
+    for sub in _other_gitignores():
+        rel = sub.relative_to(ROOT).as_posix()
+        try:
+            sub_lines = _gitignore_lines(sub)
+        except OSError as exc:
+            errors.append(f"{rel}: unreadable: {exc}")
+            continue
+        for line in sub_lines:
+            if line.startswith("!") and f"{rel}:{line}" not in ALLOWED_IGNORE_NEGATIONS:
+                errors.append(
+                    f"{rel}: negation rule not in the reviewed allowlist: {line!r}. "
+                    "A subdirectory .gitignore takes precedence over the root file, so this "
+                    "re-includes paths the root rules exclude. If it is intentional, add "
+                    f"{rel + ':' + line!r} to ALLOWED_IGNORE_NEGATIONS in "
+                    "tools/security_guards.py in the same PR."
+                )
 
 
 def check_package_manifests() -> None:
@@ -571,6 +660,18 @@ def check_package_manifests() -> None:
             errors.append(
                 f"{relpath}: trustedDependencies is forbidden - it re-enables dependency "
                 "lifecycle scripts that bun blocks by default."
+            )
+        if "workspaces" in data:
+            errors.append(
+                f"{relpath}: workspaces is forbidden - each workspace package brings its own "
+                "lifecycle scripts, which this check never reads, into `bun install`."
+            )
+        bunfig = manifest.parent / "bunfig.toml"
+        if bunfig.exists():
+            errors.append(
+                f"{bunfig.relative_to(ROOT)}: a bunfig.toml beside a portal manifest is forbidden - "
+                "it reconfigures `bun install` itself (registry, scopes, trusted packages) for "
+                "every fork user."
             )
 
 
