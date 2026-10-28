@@ -25,6 +25,15 @@ per-file diff commands.
 
 ### Changed
 
+- **The cover-letter skeleton tells stories instead of listing CV bullets**
+  (`.claude/skills/job-application-assistant/06-cover-letter-templates.md`, framework 1.1.0) -
+  `03-writing-style.md` says the letter is "not a CV repetition", but `06`'s skeleton was an
+  opening, a bullet list of "concrete achievements" and a fit paragraph, so drafts followed the
+  skeleton and restated the CV's bullets. The skeleton now runs: why this role and company now,
+  the problem the posting hires for, one or two challenge-decision-result stories, optional
+  supporting bullets (at most 3, never copies of CV bullets), then gaps and logistics. A new
+  "Don't repeat the CV" section states the rule and the check.
+
 - **The repository moved to the `ai-job-search-dev` organization** - the canonical URL is now
   `https://github.com/ai-job-search-dev/ai-job-search`. GitHub redirects the old
   `MadsLorentzen/ai-job-search` address for web links, `git` remotes, raw files and the API, so

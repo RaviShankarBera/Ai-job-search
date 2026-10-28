@@ -1,5 +1,5 @@
 ---
-framework_version: 1.0.2
+framework_version: 1.1.0
 ---
 
 # Cover Letter Templates and Tailoring Guide
@@ -86,20 +86,22 @@ The font wrapper is mandatory — if you just move `\begin{itemize}` outside `\l
 \currentdate{\today}
 \lettercontent{Dear [Name/Team],}
 
-\lettercontent{[Opening paragraph - role, connection to background, 2-3 sentences]}
+\lettercontent{[Opening - the role, and why this role at this company now, 2-3 sentences. Reasons come from the posting, the profile and verified company facts]}
 
-\lettercontent{[Body paragraph - most relevant experience, introducing the bullet list]}
+\lettercontent{[The problem - what the posting shows they are hiring someone to solve, 1-2 sentences]}
 
+\lettercontent{[Story 1 - where the candidate solved that problem, or the closest one in the profile: the challenge, the decision they made, the result. A story, not a role summary]}
+
+\lettercontent{[Story 2 (optional) - a second, different angle on the same problem, same shape]}
+
+% Optional, at most 3 bullets, only for results that back the stories and that
+% the stories don't already tell. Never a copy of the CV's bullets.
 {\raggedright\fontspec[Path = OpenFonts/fonts/raleway/]{Raleway-Medium}\fontsize{11pt}{13pt}\selectfont
 \begin{itemize}
-    \item {[Concrete achievement/skill 1]}
-    \item {[Concrete achievement/skill 2]}
-    \item {[Concrete achievement/skill 3]}
+    \item {[Supporting result, only if it adds something the CV and stories don't]}
 \end{itemize}\par}
 
-\lettercontent{[Connection to company - why this role, why this company specifically]}
-
-\lettercontent{[Personal fit paragraph - behavioral strengths, team contribution, 2-3 sentences]}
+\lettercontent{[Gaps and logistics - the main gap named honestly with its bridge; availability, location, start date]}
 
 \lettercontent{I look forward to hearing from you.}
 
@@ -125,6 +127,14 @@ The font wrapper is mandatory — if you just move `\begin{itemize}` outside `\l
 
 ## Tailoring Guidelines
 
+### Don't repeat the CV
+`03-writing-style.md` already says the letter is "not a CV repetition"; the skeleton above is built to make that the default. The reader has the CV already, so the letter says what the CV can't:
+- **Why this role, this company, now**, from the posting, the profile and verified company facts.
+- **The problem** the posting shows they are hiring someone to solve.
+- **One or two stories** where the candidate solved that problem or the closest one in the profile: the challenge, the decision they made, the result. Having faced a similar challenge counts for more than having held the right title.
+
+A result may appear in both documents, but in the letter it sits inside a story (what the candidate saw, what they decided, what happened), never as a restated CV bullet. Check before compiling: if a letter sentence would read the same as a CV bullet, rewrite it as part of a story or cut it. Stories use only facts from the grounding sources; a decision or reason the profile doesn't record is a question for the candidate, not something to fill in.
+
 ### Salutation
 - If you know the hiring manager's name: "Dear [First Last],"
 - If you know the team: "Dear [Company] hiring team,"
@@ -143,7 +153,7 @@ The font wrapper is mandatory — if you just move `\begin{itemize}` outside `\l
 
 ### Bullet Lists
 - Place `\begin{itemize}...\end{itemize}` **outside** a `\lettercontent{}` block (see "Known template pitfall" above), wrapped in the matching Raleway-Medium `\fontspec` so the bullet font matches the body
-- 3-5 bullets is ideal
+- Bullets are optional: at most 3, and only for results the stories don't already tell (see "Don't repeat the CV")
 - Start each bullet with bold label or action verb
 - Use `\textbf{Label:}` for category-style bullets
 - A bullet whose text begins with a literal `[` must be braced: `\item {[text]}`. Unbraced, LaTeX parses `[text]` as `\item`'s optional label and renders it off the left page edge, missing from the PDF text layer entirely
